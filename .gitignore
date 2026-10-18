@@ -1,0 +1,15 @@
+# Secretos: NUNCA subir
+.env
+
+# Entorno virtual
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.pyc
+
+# Editor / SO
+.vscode/
+.DS_Store
+Thumbs.db
