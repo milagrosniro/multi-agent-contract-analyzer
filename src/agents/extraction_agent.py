@@ -28,6 +28,7 @@ Classify each change as exactly one of:
 
 Rules:
 - Compare word by word: a single changed word, amount, date or term counts as a change.
+- For each changed clause, go sentence by sentence and report ALL its differences, never only the main one. Words that define the scope of a right (such as exclusive, irrevocable, only or solely) matter: if one is removed or added, name that exact word in the summary.
 - Ignore differences in punctuation, line breaks or formatting that do not change the meaning.
 - Do not infer, assume or give legal opinions.
 - If there are no changes, return empty lists and say so in the summary."""
