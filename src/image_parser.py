@@ -3,6 +3,7 @@
 import base64
 from pathlib import Path
 
+from langfuse import get_client
 from openai import APIConnectionError, APITimeoutError, BadRequestError, OpenAI, RateLimitError
 
 from src.config import get_settings
@@ -62,32 +63,46 @@ def parse_contract_image(image_path: str) -> str:
         max_retries=settings.max_retries,
     )
 
-    try:
-        response = client.chat.completions.create(
-            model=settings.vision_model,
-            max_tokens=settings.vision_max_tokens,
-            temperature=0,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": VISION_PROMPT},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:{mime_type};base64,{base64_image}", "detail": "high"},
-                        },
-                    ],
-                }
-            ],
+    # Registra modelo, tokens y latencia; solo guarda el path, no la imagen del contrato
+    with get_client().start_as_current_observation(
+        name="vision_transcription",
+        as_type="generation",
+        model=settings.vision_model,
+        input={"prompt": VISION_PROMPT, "image_path": image_path},
+    ) as generation:
+        try:
+            response = client.chat.completions.create(
+                model=settings.vision_model,
+                max_tokens=settings.vision_max_tokens,
+                temperature=0,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": VISION_PROMPT},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:{mime_type};base64,{base64_image}", "detail": "high"},
+                            },
+                        ],
+                    }
+                ],
+            )
+        except APITimeoutError as e:
+            raise ImageParsingError(f"Timeout de OpenAI al leer {image_path}.") from e
+        except RateLimitError as e:
+            raise ImageParsingError("Límite de uso de OpenAI alcanzado (rate limit o sin crédito).") from e
+        except APIConnectionError as e:
+            raise ImageParsingError("No se pudo conectar con OpenAI. Revisá tu conexión.") from e
+        except BadRequestError as e:
+            raise ImageParsingError(f"OpenAI rechazó la imagen {image_path}: {e.message}") from e
+        generation.update(
+            output=response.choices[0].message.content,
+            usage_details={
+                "input": response.usage.prompt_tokens,
+                "output": response.usage.completion_tokens,
+            },
         )
-    except APITimeoutError as e:
-        raise ImageParsingError(f"Timeout de OpenAI al leer {image_path}.") from e
-    except RateLimitError as e:
-        raise ImageParsingError("Límite de uso de OpenAI alcanzado (rate limit o sin crédito).") from e
-    except APIConnectionError as e:
-        raise ImageParsingError("No se pudo conectar con OpenAI. Revisá tu conexión.") from e
-    except BadRequestError as e:
-        raise ImageParsingError(f"OpenAI rechazó la imagen {image_path}: {e.message}") from e
 
     choice = response.choices[0]
     if choice.finish_reason == "length":

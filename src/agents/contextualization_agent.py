@@ -49,5 +49,8 @@ class ContextualizationAgent:
         prompt = ChatPromptTemplate.from_messages([("system", SYSTEM_PROMPT), ("human", HUMAN_PROMPT)])
         self.chain = prompt | llm | StrOutputParser()
 
-    def run(self, original_text: str, amendment_text: str) -> str:
-        return self.chain.invoke({"original_text": original_text, "amendment_text": amendment_text})
+    def run(self, original_text: str, amendment_text: str, callbacks: list | None = None) -> str:
+        return self.chain.invoke(
+            {"original_text": original_text, "amendment_text": amendment_text},
+            config={"callbacks": callbacks},
+        )

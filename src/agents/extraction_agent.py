@@ -64,14 +64,17 @@ class ExtractionAgent:
         prompt = ChatPromptTemplate.from_messages([("system", SYSTEM_PROMPT), ("human", HUMAN_PROMPT)])
         self.chain = prompt | llm.with_structured_output(ContractChangeOutput)
 
-    def run(self, context_map: str, original_text: str, amendment_text: str) -> ContractChangeOutput:
+    def run(
+        self, context_map: str, original_text: str, amendment_text: str, callbacks: list | None = None
+    ) -> ContractChangeOutput:
         try:
             return self.chain.invoke(
                 {
                     "context_map": context_map,
                     "original_text": original_text,
                     "amendment_text": amendment_text,
-                }
+                },
+                config={"callbacks": callbacks},
             )
         except (ValidationError, OutputParserException) as e:
             raise ExtractionError(f"La respuesta del Agente 2 no cumple ContractChangeOutput: {e}") from e

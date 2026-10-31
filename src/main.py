@@ -3,6 +3,9 @@
 import argparse
 import sys
 
+from langfuse import get_client
+from langfuse.langchain import CallbackHandler
+
 from src.agents.contextualization_agent import ContextualizationAgent
 from src.agents.extraction_agent import ExtractionAgent, ExtractionError
 from src.image_parser import ImageParsingError, parse_contract_image, validate_image
@@ -15,10 +18,52 @@ def run_pipeline(original_path: str, amendment_path: str) -> ContractChangeOutpu
     validate_image(original_path)
     validate_image(amendment_path)
 
-    original_text = parse_contract_image(original_path)
-    amendment_text = parse_contract_image(amendment_path)
-    context_map = ContextualizationAgent().run(original_text, amendment_text)
-    return ExtractionAgent().run(context_map, original_text, amendment_text)
+    langfuse = get_client()
+    # Captura automáticamente modelo, tokens y latencia de las llamadas de LangChain
+    tracing_handler = CallbackHandler()
+
+    with langfuse.start_as_current_observation(
+        name="contract-analysis",
+        input={"original_path": original_path, "amendment_path": amendment_path},
+    ) as root_span:
+        with langfuse.start_as_current_observation(
+            name="parse_original_contract", input={"path": original_path}
+        ) as span:
+            original_text = parse_contract_image(original_path)
+            span.update(output=original_text, metadata={"characters": len(original_text)})
+
+        with langfuse.start_as_current_observation(
+            name="parse_amendment_contract", input={"path": amendment_path}
+        ) as span:
+            amendment_text = parse_contract_image(amendment_path)
+            span.update(output=amendment_text, metadata={"characters": len(amendment_text)})
+
+        with langfuse.start_as_current_observation(
+            name="contextualization_agent",
+            as_type="agent",
+            input={"original_text": original_text, "amendment_text": amendment_text},
+        ) as span:
+            context_map = ContextualizationAgent().run(
+                original_text, amendment_text, callbacks=[tracing_handler]
+            )
+            span.update(output=context_map)
+
+        with langfuse.start_as_current_observation(
+            name="extraction_agent",
+            as_type="agent",
+            input={"context_map": context_map},
+        ) as span:
+            result = ExtractionAgent().run(
+                context_map, original_text, amendment_text, callbacks=[tracing_handler]
+            )
+            span.update(output=result.model_dump())
+
+        root_span.update(
+            output=result.model_dump(),
+            metadata={"sections_changed": len(result.sections_changed)},
+        )
+
+    return result
 
 
 def main() -> int:
@@ -32,6 +77,9 @@ def main() -> int:
     except (ImageParsingError, ExtractionError, EnvironmentError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
+    finally:
+        # El envío a Langfuse es en segundo plano: sin esto se perderían las últimas trazas
+        get_client().flush()
 
     print(result.model_dump_json(indent=2))
     return 0
