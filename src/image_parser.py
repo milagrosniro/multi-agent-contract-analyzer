@@ -4,7 +4,15 @@ import base64
 from pathlib import Path
 
 from langfuse import get_client
-from openai import APIConnectionError, APITimeoutError, BadRequestError, OpenAI, RateLimitError
+from openai import (
+    APIConnectionError,
+    APIError,
+    APITimeoutError,
+    AuthenticationError,
+    BadRequestError,
+    OpenAI,
+    RateLimitError,
+)
 
 from src.config import get_settings
 
@@ -96,6 +104,10 @@ def parse_contract_image(image_path: str) -> str:
             raise ImageParsingError("No se pudo conectar con OpenAI. Revisá tu conexión.") from e
         except BadRequestError as e:
             raise ImageParsingError(f"OpenAI rechazó la imagen {image_path}: {e.message}") from e
+        except AuthenticationError as e:
+            raise ImageParsingError("OpenAI rechazó la clave. Revisá OPENAI_API_KEY en tu .env.") from e
+        except APIError as e:
+            raise ImageParsingError(f"Error de OpenAI al leer {image_path}: {e}") from e
         generation.update(
             output=response.choices[0].message.content,
             usage_details={

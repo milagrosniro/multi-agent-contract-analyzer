@@ -3,7 +3,9 @@
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
+from openai import OpenAIError
 
+from src.agents.errors import AgentError, describe_openai_error
 from src.config import get_settings
 
 SYSTEM_PROMPT = """You are a Senior Legal Analyst specialized in commercial contracts.
@@ -50,7 +52,14 @@ class ContextualizationAgent:
         self.chain = prompt | llm | StrOutputParser()
 
     def run(self, original_text: str, amendment_text: str, callbacks: list | None = None) -> str:
-        return self.chain.invoke(
-            {"original_text": original_text, "amendment_text": amendment_text},
-            config={"callbacks": callbacks},
-        )
+        try:
+            context_map = self.chain.invoke(
+                {"original_text": original_text, "amendment_text": amendment_text},
+                config={"callbacks": callbacks},
+            )
+        except OpenAIError as e:
+            raise AgentError(describe_openai_error("Agente 1", e)) from e
+
+        if not context_map.strip():
+            raise AgentError("Agente 1: el modelo devolvió un mapa vacío.")
+        return context_map

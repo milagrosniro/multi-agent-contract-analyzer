@@ -3,8 +3,11 @@
 from langchain_core.exceptions import OutputParserException
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
+from langchain_openai.chat_models.base import OpenAIRefusalError
+from openai import OpenAIError
 from pydantic import ValidationError
 
+from src.agents.errors import AgentError, describe_openai_error
 from src.config import get_settings
 from src.models import ContractChangeOutput
 
@@ -45,10 +48,6 @@ ENMIENDA:
 >>>"""
 
 
-class ExtractionError(Exception):
-    """El Agente 2 no devolvió un resultado válido según ContractChangeOutput."""
-
-
 class ExtractionAgent:
     """Recibe el mapa y los dos textos y devuelve los cambios validados con Pydantic."""
 
@@ -77,4 +76,8 @@ class ExtractionAgent:
                 config={"callbacks": callbacks},
             )
         except (ValidationError, OutputParserException) as e:
-            raise ExtractionError(f"La respuesta del Agente 2 no cumple ContractChangeOutput: {e}") from e
+            raise AgentError(f"Agente 2: la respuesta no cumple ContractChangeOutput: {e}") from e
+        except OpenAIRefusalError as e:
+            raise AgentError(f"Agente 2: el modelo se negó a responder: {e}") from e
+        except OpenAIError as e:
+            raise AgentError(describe_openai_error("Agente 2", e)) from e
